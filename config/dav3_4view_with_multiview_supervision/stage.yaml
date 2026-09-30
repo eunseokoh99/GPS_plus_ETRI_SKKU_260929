@@ -1,0 +1,87 @@
+# dav3_4view_with_multiview_supervision -- dav3_4view plus per-segment
+#   novel-view supervision. Identical in every other respect.
+#   Each step draws one novel view per stereo segment (s1/s2/s3) from that
+#   segment's own sibling folder -- 3 novel views per step -- and averages
+#   their loss. Gaussians are still regressed only once per step; only the
+#   rasterization is repeated.
+name: 'dav3_4view_with_multiview_supervision'
+model_type: 'DAV3Model_MK_Upsampler_MV'
+use_chamfer: False
+
+lr: 0.0002
+wdecay: 1e-5
+batch_size: 1
+num_steps: 100000
+
+dataset:
+  source_id: [0, 1]
+  num_source_views: 4
+  # Linear 4-camera rig, spatial order view0 -> view1 -> view2 -> view3.
+  # Overlapping stereo groups give three segments: s1/s2/s3.
+  mv_source_chain: [[1, 0], [1, 1], [2, 1], [3, 1]]
+  # Merge only the 2 nearest source views' Gaussians per render.
+  render_nearest_k: 2
+  view_coincide_tol: 1.0e-4
+  view_select_seed: 1314
+  train_novel_id: [2, 3, 4, 5]
+  val_novel_id: [3]
+  use_hr_img: False
+  use_local_data: True
+  use_depth_init: True
+  inverse_depth_init: 0.2
+  eval_img_hcrop: 0.1
+  # One novel view per segment (s1/s2/s3) each step; loss is their mean.
+  novel_per_segment: True
+  # Non-rectified dataset. See data_process/data_process.md (--no-rect).
+  local_data_root: '{PREPROCESSED_WO_RECT_PATH}'
+  train_data_root: '{PREPROCESSED_WO_RECT_PATH}/train'
+  val_data_root: '{PREPROCESSED_WO_RECT_PATH}/val'
+
+raft:
+  mixed_precision: False
+  train_iters: 3
+  val_iters: 3
+  encoder_dims: [32, 48, 96]
+  hidden_dims: [96, 96, 96]
+
+gsnet:
+  encoder_dims: [32, 48, 96]
+  decoder_dims: [48, 64, 96]
+  parm_head_dim: 32
+
+dav3:
+  load_pretrained: True
+  freeze_backbone: True
+  process_res: 504
+  process_res_method: 'upper_bound_resize'
+  adapter_hidden_dim: 64
+  min_inverse_depth: 0.0001
+  max_inverse_depth: 20.0
+  apply_gs_resdepth: True
+  upsampler_log_depth_range: 3.0
+  add_layernorm_upsampler: True
+  tuning_mode: 'lora'
+  lora:
+    rank: 8
+    alpha: 16.0
+    dropout: 0.0
+    target_modules: ['qkv', 'proj']
+
+external_models:
+  depth_anything_v3:
+    device: 'cuda'
+    hf_repo_id: 'depth-anything/DA3-SMALL'
+    weights_path: null
+    load_pretrained: True
+    process_res: 504
+    process_res_method: 'upper_bound_resize'
+
+record:
+  loss_freq: 1000
+  eval_freq: 1000
+  save_freq: 5000
+  use_ema: True
+
+wandb:
+  project: ETRI_GPS_plus
+  name: dav3_4view_with_multiview_supervision

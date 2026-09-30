@@ -1,0 +1,24 @@
+__pycache__/
+*.py[cod]
+
+# Training / eval outputs
+experiments/
+output/
+wandb/
+
+# Cloned third-party code and downloaded weights (see README.md)
+external_repos
+
+# Checkpoints
+*.pth
+*.safetensors
+*.ckpt
+
+.vscode/
+.idea/
+.DS_Store
+
+# Local preprocessed datasets / setup logs
+/data/
+/logs_setup/
+/logs_train/

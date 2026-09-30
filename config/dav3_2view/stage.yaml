@@ -1,0 +1,76 @@
+# dav3_2view -- DA3-Small depth backbone in place of RAFT-Stereo.
+#   2 non-rectified source views (lmain/rmain of one stereo segment)
+#   -> DA3-Small (frozen, LoRA r8/a16 on qkv+proj) -> backbone learned
+#   upsampler -> GSRegresser. Both source views are merged for every render.
+#   LoFTR and the chamfer term are both off.
+name: 'dav3_2view'
+model_type: 'DAV3Model_MK'
+use_chamfer: False
+
+lr: 0.0002
+wdecay: 1e-5
+batch_size: 1
+num_steps: 100000
+
+dataset:
+  source_id: [0, 1]
+  train_novel_id: [2, 3, 4, 5]
+  val_novel_id: [3]
+  use_hr_img: False
+  use_local_data: True
+  use_depth_init: True
+  inverse_depth_init: 0.2
+  eval_img_hcrop: 0.1
+  # Non-rectified dataset. See data_process/data_process.md (--no-rect).
+  local_data_root: '{PREPROCESSED_WO_RECT_PATH}'
+  train_data_root: '{PREPROCESSED_WO_RECT_PATH}/train'
+  val_data_root: '{PREPROCESSED_WO_RECT_PATH}/val'
+
+raft:
+  mixed_precision: False
+  train_iters: 3
+  val_iters: 3
+  encoder_dims: [32, 48, 96]
+  hidden_dims: [96, 96, 96]
+
+gsnet:
+  encoder_dims: [32, 48, 96]
+  decoder_dims: [48, 64, 96]
+  parm_head_dim: 32
+
+dav3:
+  load_pretrained: True
+  freeze_backbone: True
+  process_res: 504
+  process_res_method: 'upper_bound_resize'
+  adapter_hidden_dim: 64
+  min_inverse_depth: 0.0001
+  max_inverse_depth: 20.0
+  apply_gs_resdepth: True
+  upsampler_log_depth_range: 3.0
+  add_layernorm_upsampler: True
+  tuning_mode: 'lora'
+  lora:
+    rank: 8
+    alpha: 16.0
+    dropout: 0.0
+    target_modules: ['qkv', 'proj']
+
+external_models:
+  depth_anything_v3:
+    device: 'cuda'
+    hf_repo_id: 'depth-anything/DA3-SMALL'
+    weights_path: null
+    load_pretrained: True
+    process_res: 504
+    process_res_method: 'upper_bound_resize'
+
+record:
+  loss_freq: 1000
+  eval_freq: 1000
+  save_freq: 5000
+  use_ema: True
+
+wandb:
+  project: ETRI_GPS_plus
+  name: dav3_2view
