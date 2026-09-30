@@ -109,8 +109,6 @@ cd data_process
 | `{RAW_DATA_PATH}` | THumanMV 원본 | `data_process/` 실행 인자 |
 | `{PREPROCESSED_PATH}` | `--rect` 로 만든 데이터셋 | `config/gps_gs/stage.yaml` |
 | `{PREPROCESSED_WO_RECT_PATH}` | `--no-rect` 로 만든 데이터셋 | `config/dav3_*/stage.yaml` |
-| `{CKPT_PATH}` | 추론에 쓸 체크포인트 `.pth` | `scripts/test_*.sh` 의 `CKPT` |
-| `{CKPT_DIR}` | 체크포인트가 모여 있는 디렉토리 | `eval_psnr_wandb.py --ckpt-dir` |
 
 config 쪽은 브랜치마다 `dataset.local_data_root` / `train_data_root` / `val_data_root`
 세 줄입니다. 예를 들어 `dav3_4view` 는 다음과 같이 채웁니다.
@@ -205,7 +203,8 @@ experiments/dav3_4view_0929/
 ## 추론 / 렌더링
 
 ```bash
-CKPT={CKPT_PATH} ./scripts/test_dav3_4view.sh
+CKPT=experiments/<name>_<MMDD>/ckpt/iter95000_ema1_e3.pth \
+  ./scripts/test_dav3_4view.sh
 ```
 
 val set 전체를 렌더해 `experiments/<name>_<MMDD>/test_show_val/` 에 PNG로 저장합니다.
@@ -215,7 +214,7 @@ iteration별 PSNR 곡선이 필요하면:
 ```bash
 python eval_psnr_wandb.py \
     --config ./config/dav3_4view \
-    --ckpt-dir {CKPT_DIR} \
+    --ckpt-dir experiments/<name>_<MMDD>/ckpt \
     --tag ema1_e3 --min-iter 5000 --max-iter 95000 --iter-interval 5000 \
     --wandb-project ETRI_GPS_plus_valid
 ```
