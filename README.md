@@ -142,7 +142,7 @@ config 쪽은 브랜치마다 `dataset.local_data_root` / `train_data_root` / `v
 
 ```
 experiments/dav3_4view_0929/
-├── ckpt/   iter{N}.pth, iter{N}_ema1_e3.pth, iter{N}_ema1_e4.pth
+├── ckpt/   iter<N>.pth, iter<N>_ema1_e3.pth, iter<N>_ema1_e4.pth
 │           dav3_4view_latest.pth       (loss_freq마다 덮어쓰기)
 │           dav3_4view_final.pth        (학습 종료 시)
 ├── show/   학습 중 저장되는 렌더 샘플
@@ -165,7 +165,7 @@ experiments/dav3_4view_0929/
 | `batch_size` | 1 | |
 | `restore_ckpt` | `None` | 중단된 학습 이어하기 (optimizer / step 까지 복원) |
 | `use_chamfer` | `gps_gs` 만 `True` | 두 source view 점군 간 chamfer loss |
-| `record.save_freq` | 5000 | `iter{N}.pth` 저장 주기 |
+| `record.save_freq` | 5000 | `iter<N>.pth` 저장 주기 |
 | `record.eval_freq` | 1000 | val PSNR 측정 주기 |
 | `record.use_ema` | `True` | EMA 가중치(`ema1_e3`, `ema1_e4`)도 함께 저장 |
 | `wandb.project` | `ETRI_GPS_plus` | `force_none` 이면 W&B를 끕니다 |
@@ -203,7 +203,7 @@ experiments/dav3_4view_0929/
 ## 추론 / 렌더링
 
 ```bash
-CKPT=experiments/<name>_<MMDD>/ckpt/iter95000_ema1_e3.pth \
+CKPT=experiments/<name>_<MMDD>/ckpt/iter<N>_ema1_e3.pth \
   ./scripts/test_dav3_4view.sh
 ```
 
