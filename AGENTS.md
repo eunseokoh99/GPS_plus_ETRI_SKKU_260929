@@ -44,8 +44,17 @@ scripts/                  브랜치별 train_*.sh / test_*.sh
 로만 갈립니다. 아래는 **값이 실제로 다른 키만** 추린 것입니다 (나머지 키는 네 브랜치가 동일).
 
 `—` 는 그 브랜치의 config 클래스에 키가 **없다**는 뜻이고, 괄호 안은 그때 코드가 쓰는
-기본값입니다. yacs가 클래스에 없는 키를 거부하므로 브랜치마다 자기 config 클래스를
-가져야 하고, 네 클래스를 하나로 합치면 안 됩니다.
+기본값입니다.
+
+키가 "없다"는 것이 그냥 비어 있다는 뜻이 아닙니다. yacs는 선언되지 않은 키를
+`KeyError: Non-existent config key` 로 거부하므로, `stage.yaml` 에 쓰는 키는 그 브랜치의
+`stereo_human_config.py` 에 미리 선언되어 있어야 합니다.
+
+**네 config 클래스를 하나로 합치지 마세요.** 일부 키는 `stage.yaml` 이 아니라 클래스 본문에서
+값을 받는데, `raft.use_loftr_coarse = False` 가 그렇습니다 (DAv3 세 클래스에만 있고
+`gps_gs` 클래스에는 없습니다). 통합 클래스가 이 키에 모델 쪽 기본값인 `True` 를 주면 DAv3
+모델에 LoFTR 서브모듈이 붙어 state_dict 키가 늘고 파라미터 순서가 밀려, 기존 체크포인트가
+strict 로드에 실패합니다. 예외 없이 조용히 다른 모델이 만들어지는 쪽이라 더 위험합니다.
 
 | 키 | `gps_gs` | `dav3_2view` | `dav3_4view` | `..._with_multiview_supervision` |
 |---|---|---|---|---|
