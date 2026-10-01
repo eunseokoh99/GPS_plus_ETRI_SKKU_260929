@@ -196,7 +196,7 @@ CKPT=experiments/<name>_<MMDD>/ckpt/iter<N>_ema1_e3.pth \
 ```
 
 val set 전체를 렌더해 `experiments/<name>_<MMDD>/test_show_val/` 에 PNG로 저장하고, 끝나면
-PSNR과 forward 속도를 출력합니다. PSNR은 아래 성능 표와 같은 기준으로 계산됩니다.
+아래와 같이 PSNR과 forward 속도를 출력합니다.
 
 ```
   config        dav3_4view
@@ -222,9 +222,9 @@ PSNR과 forward 속도를 출력합니다. PSNR은 아래 성능 표와 같은 �
 
 | 키 | 기본값 | 설명 |
 |---|---|---|
-| `dataset.val_novel_id` | `[3]` | 렌더하고 PSNR을 계산할 novel view. 여러 개면 샘플마다 전부 렌더합니다 |
+| `dataset.val_novel_id` | `[3]` | 렌더하고 PSNR을 계산할 novel view |
 | `dataset.eval_img_hcrop` | 0.1 | PSNR 계산 전에 상하단에서 잘라내는 비율 |
-| `dataset.test_save_hcrop` | 0.0 | PNG로 **저장**할 때만 잘라내는 비율. PSNR에는 영향 없습니다 |
+| `dataset.test_save_hcrop` | 0.0 | PNG로 **저장**할 때만 잘라내는 비율 |
 | `dataset.render_nearest_k` | 0 (4view는 2) | novel view 한 장을 렌더할 때 가까운 것부터 몇 개의 Gaussian을 병합할지 |
 | `dataset.*_data_root` | 자리표시자 | 평가에 쓸 데이터셋 경로 |
 | `batch_size` | 1 | |
@@ -235,7 +235,7 @@ PSNR과 forward 속도를 출력합니다. PSNR은 아래 성능 표와 같은 �
 <summary><b>학습 때와 반드시 같아야 하는 값</b> (<code>dav3_*</code> 브랜치)</summary>
 
 아래 두 값은 upsampler head의 forward 식에 상수로 들어가는데 체크포인트에 저장되지 않아,
-학습 때와 다른 값을 주면 가중치가 같아도 다른 depth가 나옵니다. 예외는 발생하지 않습니다.
+학습 때와 다른 값을 주면 가중치가 같아도 다른 depth가 나옵니다.
 
 | 키 | 기본값 |
 |---|---|
@@ -243,9 +243,6 @@ PSNR과 forward 속도를 출력합니다. PSNR은 아래 성능 표와 같은 �
 | `dav3.upsampler_log_depth_range` | 3.0 |
 
 </details>
-
-CLI 인자는 `--ckpt`(필수), `--phase`(기본 `val`), `--view`(`val_novel_id` 덮어쓰기),
-`--show_path`, `--opts` 입니다.
 
 ## 성능 / 속도
 
