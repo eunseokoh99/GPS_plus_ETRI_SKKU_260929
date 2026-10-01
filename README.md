@@ -10,10 +10,8 @@
 | `dav3_4view` | 4 | DA3-Small (frozen + LoRA) with upsamplerV2 | 카메라 4대를 모두 입력, 렌더는 가장 가까운 2대로 |
 | `dav3_4view_with_multiview_supervision` | 4 | DA3-Small (frozen + LoRA) with upsamplerV2 | 위와 같고, 학습 시 3개 구간을 동시에 감독 |
 
-코드는 네 브랜치가 전부 공유하고, 브랜치별로 다른 것은 `config/<branch>/` 안의
-`stage.yaml`(실험 설정)과 `stereo_human_config.py`(그 브랜치가 허용하는 설정 키의
-기본값)뿐입니다. `dav3_4view` 와 `dav3_4view_with_multiview_supervision` 은
-`stereo_human_config.py` 까지 같아서 `stage.yaml` 한 줄(`novel_per_segment`)만 다릅니다.
+브랜치별로 `config/<branch>/` 안의
+`stage.yaml`과 `stereo_human_config.py`에 실험 설정 및 설정 키 기본값이 셋팅되어 있습니다.
 
 ---
 
@@ -37,9 +35,9 @@ export TORCH_CUDA_ARCH_LIST=8.6   # 본인 GPU의 compute capability
 export MAX_JOBS=16                # 병렬 컴파일 (메모리가 부족하면 줄이세요)
 ```
 
-`TORCH_CUDA_ARCH_LIST` 는 자기 GPU 값으로 바꿔 주세요 (`8.6` = RTX A6000 / A40 /
+`TORCH_CUDA_ARCH_LIST` 를 사용자의 GPU 값으로 바꿉니다 (`8.6` = RTX A6000 / A40 /
 RTX 30 계열, `8.0` = A100, `8.9` = RTX 40 계열, `9.0` = H100). 확인은
-`python -c "import torch; print(torch.cuda.get_device_capability(0))"`.
+`python -c "import torch; print(torch.cuda.get_device_capability(0))"`으로 합니다.
 
 ```bash
 # 1) 3DGS 래스터라이저 (네 브랜치 모두 필수)
@@ -55,10 +53,6 @@ git clone https://github.com/ByteDance-Seed/Depth-Anything-3.git && cd ..
 git clone --branch v0.7.9 https://github.com/facebookresearch/pytorch3d.git
 pip install -e pytorch3d --no-build-isolation
 ```
-
-`--no-build-isolation` 은 두 패키지의 `setup.py` 가 빌드 도중 `import torch` 를 하기
-때문입니다. 이 옵션이 없으면 pip이 격리된 빌드 환경을 새로 만들고 거기에는 torch가 없어서
-빌드가 실패할 수 있습니다.
 
 ## W&B
 
@@ -78,9 +72,6 @@ wandb login
 ./scripts/train_dav3_4view.sh --opts wandb.project force_none
 ```
 
-계속 쓰지 않을 거라면 `config/<branch>/stage.yaml` 의 `wandb.project` 를 아예
-`'force_none'` 으로 바꿔 두어도 됩니다.
-
 ## 데이터 준비
 
 브랜치에 따라 두 가지 데이터셋이 필요합니다. `gps_gs` 만 rectification이 필요합니다.
@@ -97,12 +88,11 @@ cd data_process
 
 `{RAW_DATA_PATH}` 는 THumanMV 원본(`<seq>/<frame>_<camserial>.jpg` +
 `calibration_full.json`)이 있는 디렉토리, 나머지 둘은 생성할 데이터셋을 둘 위치입니다.
-자세한 내용과 카메라 매핑은 [data_process/data_process.md](data_process/data_process.md).
+자세한 내용과 카메라 매핑은 [data_process/data_process.md](data_process/data_process.md)에 있습니다.
 
 ### 경로 설정
 
-이 repo에는 절대경로가 들어가지 않고 아래 자리표시자로만 적혀 있습니다. 실행 전에
-본인 경로로 바꿔 주세요.
+실행 전에 아래 자리표시자를 본인 경로에 맞게 변경해야 합니다.
 
 | 자리표시자 | 의미 | 쓰이는 곳 |
 |---|---|---|
@@ -111,7 +101,7 @@ cd data_process
 | `{PREPROCESSED_WO_RECT_PATH}` | `--no-rect` 로 만든 데이터셋 | `config/dav3_*/stage.yaml` |
 
 config 쪽은 브랜치마다 `dataset.local_data_root` / `train_data_root` / `val_data_root`
-세 줄입니다. 예를 들어 `dav3_4view` 는 다음과 같이 채웁니다.
+세 줄을 변경하면 됩니다. 예를 들어 `dav3_4view` 는 다음과 같이 채웁니다.
 
 ```yaml
   local_data_root: '/your/path/preprocessed_wo_rect'
@@ -119,8 +109,7 @@ config 쪽은 브랜치마다 `dataset.local_data_root` / `train_data_root` / `v
   val_data_root:   '/your/path/preprocessed_wo_rect/val'
 ```
 
-`stage.yaml` 을 건드리지 않고 실행할 때만 덮어쓰고 싶다면, 학습 스크립트에 붙인 인자가
-그대로 `train.py` 로 전달되므로 `--opts` 를 쓰면 됩니다.
+`stage.yaml` 을 건드리지 않고 실행할 때만 덮어쓰고 싶다면, `--opts` 를 사용합니다.
 
 ```bash
 ./scripts/train_dav3_4view.sh --opts \
@@ -152,8 +141,7 @@ experiments/dav3_4view_0929/
 
 ### 주요 config
 
-`config/<branch>/stage.yaml` 을 수정하거나, 학습 스크립트에 `--opts <키> <값>` 으로
-그때만 덮어쓸 수 있습니다.
+`config/<branch>/stage.yaml` 을 수정하거나, 학습 스크립트에 `--opts <키> <값>` 으로 덮어쓸 수 있습니다.
 
 <details>
 <summary><b>학습</b></summary>
@@ -221,9 +209,9 @@ python eval_psnr_wandb.py \
 
 ## 성능 / 속도
 
-### PSNR
+아래는 전체 val set 270 샘플, novel view(`val_novel_id: [3]`)로 평가 했을 때 PSNR 성능 및 속도 입니다.
 
-전체 val set 270 샘플, novel view(`val_novel_id: [3]`) 기준입니다.
+### PSNR
 
 | 브랜치 | 체크포인트 | PSNR |
 |---|---|---|
@@ -253,15 +241,15 @@ python eval_psnr_wandb.py \
 
 **forward 횟수.** 표의 시간은 카메라 4대를 입력했을 때 세 쌍(s1 / s2 / s3)의 Gaussian
 파라미터가 모두 나오기까지 걸리는 시간입니다. 4-view 브랜치는 네 view를 한 번에 처리하므로
-forward 1회, 2-view 브랜치는 카메라쌍을 하나씩 처리하므로 forward 3회를 합한 값입니다.
+forward 1회, 2-view 브랜치는 두 view(카메라 쌍)를 한 번씩 처리하므로 forward 3회를 합한 값입니다.
 
 ### 측정 환경
 
 - GPU: NVIDIA RTX A6000 (48 GB) 1장
 - 입력 이미지: 1024×1024
-- 반복 횟수: 같은 입력으로 forward 150번 중 앞 50번은 warm-up으로 버리고 뒤 100번의 평균
+- 속도 측정 시 반복 횟수: 같은 입력으로 forward 150번 중 앞 50번은 warm-up으로 버리고 뒤 100번의 평균
   (GPU 클럭이 올라가고 CUDA 커널이 선택·캐시되기까지 첫 몇 번이 느립니다)
-- peak memory: 그 100번 동안 PyTorch가 할당한 GPU memory 최대량
+- 속도 측정 시 peak memory: 그 100번 동안 PyTorch가 할당한 GPU memory 최대량
 
 ---
 

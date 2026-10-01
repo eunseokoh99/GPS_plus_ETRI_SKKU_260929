@@ -1,7 +1,6 @@
 # 데이터 전처리
 
-원본 THumanMV를 학습용 데이터셋으로 변환합니다. 브랜치에 따라 **두 가지 버전**이
-필요합니다.
+원본 THumanMV를 학습용 데이터셋으로 변환합니다. 브랜치에 따라 **두 가지 버전**의 데이터셋이 필요합니다.
 
 | 데이터셋 | 만드는 법 | 쓰는 브랜치 |
 |---|---|---|
@@ -10,8 +9,8 @@
 
 `gps_gs`는 LoFTR cross-attention이 **같은 행(row) 안에서만** 어텐션을 걸기 때문에,
 두 영상의 대응점이 같은 y좌표에 있어야 합니다. 이를 위해 `gps_gs` 브랜치는
-rectification을 필요로 합니다. DAv3 브랜치는 LoFTR 모듈을 쓰지 않으므로
-(`raft.use_loftr_coarse: False`) rectification도 필요하지 않습니다.
+rectification을 필요로 하며, DAv3 브랜치는 LoFTR 모듈을 쓰지 않으므로
+(`raft.use_loftr_coarse: False`) rectification를 필요하지 않습니다.
 
 ---
 
@@ -56,12 +55,12 @@ python step_1.py -i s1a1 -t train \
 
 - `step_0.py` — source view 0, 1 (스테레오 쌍) + mask + `0_1.json`. `--rect` 여부가 여기서만 갈립니다.
 - `step_1.py` — novel view 2, 3, 4, 5 + `{id}_intrinsic.npy` / `{id}_extrinsic.npy`.
-  novel view는 **어느 경우에도 rectify하지 않습니다.**
+  novel view는 **rectify하지 않습니다.**
 - **두 스크립트에 반드시 같은 `--processed-root`를 주어야 합니다.** 다르게 주면 source
   view와 novel view가 서로 다른 데이터셋으로 갈라집니다.
 - `-j` 로 스레드 수 조절 (기본 `min(32, cpu_count)`). `run_data_process.sh` 는 `JOBS` 환경변수.
 
-프레임 분할은 스크립트에 고정되어 있습니다.
+train 및 validation을 위한 데이터셋 분할은 스크립트에 아래와 같이 고정되어 있습니다.
 
 | split | 시퀀스 | 프레임 |
 |---|---|---|
@@ -83,8 +82,7 @@ python step_1.py -i s1a1 -t train \
 ## 4. 카메라 → view index 매핑
 
 카메라 10대가 거의 일정한 간격으로 한 줄로 늘어서 있습니다. source 카메라(●)는 3대씩
-건너뛰어 놓이고, 그 사이를 novel 카메라(○) 두 대가 채웁니다. segment 는 인접한 source
-카메라 쌍으로 끊기므로 **양 옆 segment 와 카메라 한 대를 공유**합니다.
+건너뛰어 놓이고, 그 사이를 novel 카메라(○) 두 대가 채웁니다. 
 
 ```
    22139908  22139907  22070932  22139909  22053927  22053908  22139914  22053925  22053923  22139906

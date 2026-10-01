@@ -46,16 +46,6 @@ scripts/                  브랜치별 train_*.sh / test_*.sh
 `—` 는 그 브랜치의 config 클래스에 키가 **없다**는 뜻이고, 괄호 안은 그때 코드가 쓰는
 기본값입니다.
 
-키가 "없다"는 것이 그냥 비어 있다는 뜻이 아닙니다. yacs는 선언되지 않은 키를
-`KeyError: Non-existent config key` 로 거부하므로, `stage.yaml` 에 쓰는 키는 그 브랜치의
-`stereo_human_config.py` 에 미리 선언되어 있어야 합니다.
-
-**네 config 클래스를 하나로 합치지 마세요.** 일부 키는 `stage.yaml` 이 아니라 클래스 본문에서
-값을 받는데, `raft.use_loftr_coarse = False` 가 그렇습니다 (DAv3 세 클래스에만 있고
-`gps_gs` 클래스에는 없습니다). 통합 클래스가 이 키에 모델 쪽 기본값인 `True` 를 주면 DAv3
-모델에 LoFTR 서브모듈이 붙어 state_dict 키가 늘고 파라미터 순서가 밀려, 기존 체크포인트가
-strict 로드에 실패합니다. 예외 없이 조용히 다른 모델이 만들어지는 쪽이라 더 위험합니다.
-
 | 키 | `gps_gs` | `dav3_2view` | `dav3_4view` | `..._with_multiview_supervision` |
 |---|---|---|---|---|
 | `model_type` | `GPSGS` | `DAV3Model_MK` | `DAV3Model_MK_Upsampler_MV` | `DAV3Model_MK_Upsampler_MV` |
@@ -70,23 +60,10 @@ strict 로드에 실패합니다. 예외 없이 조용히 다른 모델이 만�
 | `dataset.local_data_root` | `{PREPROCESSED_PATH}` | `{PREPROCESSED_WO_RECT_PATH}` | `{PREPROCESSED_WO_RECT_PATH}` | `{PREPROCESSED_WO_RECT_PATH}` |
 | `raft.use_loftr_coarse` | — (읽지 않음) | `False` | `False` | `False` |
 
-`dataset.train_data_root` / `val_data_root` 는 `local_data_root` 에 `/train`, `/val` 을 붙인
-것이고, `name` 과 `wandb.name` 은 브랜치 이름 그대로입니다.
-
-몇 가지 짚어둘 점.
-
-- **`dav3_4view` 와 `..._with_multiview_supervision` 은 `novel_per_segment` 한 줄만 다릅니다.**
-  `stereo_human_config.py` 는 두 브랜치가 완전히 동일한 파일입니다.
-- **`raft.use_loftr_coarse` 는 `gps_gs` 에서 읽히지 않습니다.** `lib/network.py` 가
-  `LocalFeatureTransformer()` 를 무조건 생성하므로 `gps_gs` 는 항상 LoFTR을 씁니다. 이 키는
-  DAv3 모델만 읽고, 세 브랜치 모두 `False` 라 LoFTR 모듈을 만들지 않습니다.
-- **`dataset.inverse_depth_init` 이 `gps_gs` 만 0.3입니다.** 2-view DAv3는 0.2이고, 이 값이
-  `_BackboneDepthUpsampler` 의 `init_log_depth = log(1 / inverse_depth_init)` 으로 들어가
-  학습 초기 depth를 결정합니다.
 
 ### 2.1 `dav3_*` 전용 블록
 
-아래 두 블록은 `gps_gs` 의 config 클래스에 아예 없고, DAv3 세 브랜치는 **값까지 모두 동일**합니다.
+아래는 `gps_gs` 의 config 클래스에 없는, DAv3 세 브랜치에서 공유하여 사용하고 있는 값들입니다.
 
 | 키 | 값 |
 |---|---|
