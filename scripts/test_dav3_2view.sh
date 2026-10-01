@@ -14,4 +14,5 @@ CUDA_VISIBLE_DEVICES=${GPU} python test.py \
     --ckpt "${CKPT}" \
     --phase "${PHASE}" \
     ${VIEW:+--view ${VIEW}} \
-    ${SHOW_PATH:+--show_path "${SHOW_PATH}"}
+    ${SHOW_PATH:+--show_path "${SHOW_PATH}"} \
+    "$@"

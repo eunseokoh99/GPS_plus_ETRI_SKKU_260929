@@ -195,17 +195,57 @@ CKPT=experiments/<name>_<MMDD>/ckpt/iter<N>_ema1_e3.pth \
   ./scripts/test_dav3_4view.sh
 ```
 
-val set 전체를 렌더해 `experiments/<name>_<MMDD>/test_show_val/` 에 PNG로 저장합니다.
+val set 전체를 렌더해 `experiments/<name>_<MMDD>/test_show_val/` 에 PNG로 저장하고, 끝나면
+PSNR과 forward 속도를 출력합니다. PSNR은 아래 성능 표와 같은 기준으로 계산됩니다.
 
-iteration별 PSNR 곡선이 필요하면:
-
-```bash
-python eval_psnr_wandb.py \
-    --config ./config/dav3_4view \
-    --ckpt-dir experiments/<name>_<MMDD>/ckpt \
-    --tag ema1_e3 --min-iter 5000 --max-iter 95000 --iter-interval 5000 \
-    --wandb-project ETRI_GPS_plus_valid
 ```
+  config        dav3_4view
+  checkpoint    experiments/dav3_4view_0929/ckpt/iter95000_ema1_e3.pth
+  samples       270 x 1 novel view = 270 scored
+  PSNR (full)   33.7794
+  PSNR (crop)   33.7829   (eval_img_hcrop=0.1)
+  forward       249.1 ms   (median 249.2, min 247.9, std 0.75)
+  peak memory   4122 MB
+                1 forward(s) covering all 4 source cameras of one frame,
+                100 iterations after 50 warm-up, inputs already on the GPU;
+                model forward only -- data IO and render excluded.
+                Needs an otherwise idle GPU to be comparable.
+```
+
+### 추론 시 주요 config
+
+`stage.yaml` 을 고치거나 `--opts <키> <값>` 으로 덮어쓸 수 있습니다. 스크립트에 붙인 인자는
+`test.py` 로 그대로 전달됩니다.
+
+<details>
+<summary><b>추론 / 평가</b></summary>
+
+| 키 | 기본값 | 설명 |
+|---|---|---|
+| `dataset.val_novel_id` | `[3]` | 렌더하고 PSNR을 계산할 novel view. 여러 개면 샘플마다 전부 렌더합니다 |
+| `dataset.eval_img_hcrop` | 0.1 | PSNR 계산 전에 상하단에서 잘라내는 비율 |
+| `dataset.test_save_hcrop` | 0.0 | PNG로 **저장**할 때만 잘라내는 비율. PSNR에는 영향 없습니다 |
+| `dataset.render_nearest_k` | 0 (4view는 2) | novel view 한 장을 렌더할 때 가까운 것부터 몇 개의 Gaussian을 병합할지 |
+| `dataset.*_data_root` | 자리표시자 | 평가에 쓸 데이터셋 경로 |
+| `batch_size` | 1 | |
+
+</details>
+
+<details>
+<summary><b>학습 때와 반드시 같아야 하는 값</b> (<code>dav3_*</code> 브랜치)</summary>
+
+아래 두 값은 upsampler head의 forward 식에 상수로 들어가는데 체크포인트에 저장되지 않아,
+학습 때와 다른 값을 주면 가중치가 같아도 다른 depth가 나옵니다. 예외는 발생하지 않습니다.
+
+| 키 | 기본값 |
+|---|---|
+| `dataset.inverse_depth_init` | 0.2 (`gps_gs` 는 0.3) |
+| `dav3.upsampler_log_depth_range` | 3.0 |
+
+</details>
+
+CLI 인자는 `--ckpt`(필수), `--phase`(기본 `val`), `--view`(`val_novel_id` 덮어쓰기),
+`--show_path`, `--opts` 입니다.
 
 ## 성능 / 속도
 
@@ -228,10 +268,12 @@ python eval_psnr_wandb.py \
 
 | 브랜치 | forward 횟수 | 속도 | peak memory |
 |---|---|---|---|
-| `gps_gs` | 2-view × 3회 | 394.4 ms (2.5 fps) | 2.4 GB |
-| `dav3_2view` | 2-view × 3회 | 447.7 ms (2.2 fps) | 2.7 GB |
-| `dav3_4view` | 4-view × 1회 | 252.9 ms (4.0 fps) | 4.0 GB |
-| `dav3_4view_with_multiview_supervision` | 4-view × 1회 | **252.4 ms (4.0 fps)** | 4.0 GB |
+| `gps_gs` | 2-view × 3회 | 394.1 ms (2.5 fps) | 2.2 GB |
+| `dav3_2view` | 2-view × 3회 | 448.4 ms (2.2 fps) | 2.4 GB |
+| `dav3_4view` | 4-view × 1회 | 249.1 ms (4.0 fps) | 4.0 GB |
+| `dav3_4view_with_multiview_supervision` | 4-view × 1회 | **249.8 ms (4.0 fps)** | 4.0 GB |
+
+위 값은 `scripts/test_<branch>.sh` 를 돌리면 그대로 출력됩니다.
 
 **측정 구간.** 입력 이미지를 넣어 Gaussian 파라미터(xyz / rot / scale / opacity)가
 나오기까지의 모델 forward만 측정했습니다. 즉 아래 두 구간은 **제외**되어 있습니다.

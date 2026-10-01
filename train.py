@@ -12,7 +12,12 @@ from tqdm import tqdm
 from datetime import datetime
 from lib.human_loader import StereoHumanDataset, MultiViewStereoHumanDataset
 from lib.network import RtStereoHumanModel
-from lib.runtime import freeze_raft_bn, novel_view_to_cuda, pick_render_views
+from lib.runtime import (
+    eval_psnr_pass,
+    freeze_raft_bn,
+    novel_view_to_cuda,
+    pick_render_views,
+)
 from models.dav3_model import DAV3Model_MK
 from models.dav3_mv_model import DAV3Model_MK_Upsampler_MV
 import importlib
@@ -36,7 +41,7 @@ warnings.filterwarnings("ignore", category=UserWarning)
 
 
 # cfg.model_type -> model class. Kept as a plain dict rather than a registry so
-# that `import train` stays cheap and eval_psnr_wandb.py / test.py can reuse it.
+# that `import train` stays cheap and test.py can reuse it.
 #
 # NOTE (checkpoint contract): the object assigned to Trainer.self.model defines
 # the state_dict key prefixes. GPSGS uses the bare net, so its keys are
@@ -347,83 +352,41 @@ class Trainer:
         """One full validation pass; returns ``(full_psnr, crop_psnr)``, each a
         mean over all (sample, view) pairs.
 
-        Every sample is scored at *every* novel view in ``val_novel_id``: each
-        view is rebuilt in the main process, so the loader's per-sample random
-        choice is bypassed and all views are always covered. The model runs once
-        per sample and is re-rendered per view. The val iterator is reset first
-        so each model version sees the same samples. ``full_psnr`` scores the
-        whole novel view; ``crop_psnr`` drops the top/bottom
-        ``self.eval_img_hcrop`` fraction of rows (0.0 = no crop, in which case
-        the two are identical). ``tag`` namespaces the image dump.
+        The pass itself lives in ``lib/runtime.eval_psnr_pass`` so that test.py
+        scores identically. ``tag`` namespaces the image dump.
         """
         self.val_iterator = iter(self.val_loader)
-        novel_view_ids = list(self.cfg.dataset.val_novel_id)
-        crop = self.eval_img_hcrop
-        psnr_list = []
-        crop_psnr_list = []
         show_idx = self.len_val // 2
 
-        for idx in range(self.len_val):
-            data = self.fetch_data(phase='val')
-            sample_name = data['name'][0]
-            with torch.no_grad():
-                base_data, _, _ = self.model(data, is_train=False)
-                for view_id in novel_view_ids:
-                    # Re-render the same gaussians to each novel view in turn.
-                    render_data = dict(base_data)
-                    # The loader hands back CPU tensors; the nearest-view
-                    # selection compares them against the (CUDA) source-view
-                    # extrinsics, so move them across first. Pure device move,
-                    # no numerical effect.
-                    render_data['novel_view'] = self._novel_view_to_cuda(
-                        default_collate(
-                            [self.val_set.get_novel_view_tensor(sample_name, view_id)]
-                        )
-                    )
-                    # Match the training-time render (same nearest-k source
-                    # views) but deterministic (rng=None) so PSNR is stable.
-                    render_data = pts2render(
-                        render_data,
-                        bg_color=self.cfg.dataset.bg_color,
-                        source_views=self._pick_render_views(
-                            render_data, render_data['novel_view'], rng=None,
-                        ),
-                    )
+        def _dump(idx, sample_name, view_id, render_data):
+            if not save_vis or idx != show_idx:
+                return
+            tmp_novel = render_data['novel_view']['img_pred'][0].detach()
+            tmp_novel *= 255
+            tmp_novel = tmp_novel.permute(1, 2, 0).cpu().numpy()
+            tmp_img_name = '%s/%s_%s_view%s.png' % (
+                self.cfg.record.show_path, self.total_steps, tag, view_id,
+            )
+            cv2.imwrite(tmp_img_name, tmp_novel[:, :, ::-1].astype(np.uint8))
+            self.logger.log_image(
+                'eval/%s/view%s/image' % (tag, view_id),
+                tmp_novel.astype(np.uint8), self.total_steps,
+            )
 
-                    render_novel = render_data['novel_view']['img_pred']
-                    gt_novel = render_data['novel_view']['img'].cuda()
-
-                    # Full-frame PSNR over the whole novel view.
-                    psnr_list.append(psnr(render_novel, gt_novel).mean().double().item())
-
-                    # Cropped PSNR: drop the top/bottom `crop` fraction of rows
-                    # before scoring (0.0 = no crop -> same as full-frame).
-                    render_crop, gt_crop = render_novel, gt_novel
-                    if crop > 0.0:
-                        h = render_novel.shape[-2]
-                        top = int(round(h * crop))
-                        if top > 0:
-                            render_crop = render_novel[..., top:h - top, :]
-                            gt_crop = gt_novel[..., top:h - top, :]
-                    crop_psnr_value = psnr(render_crop, gt_crop).mean().double()
-                    crop_psnr_list.append(crop_psnr_value.item())
-
-                    if save_vis and idx == show_idx:
-                        tmp_novel = render_data['novel_view']['img_pred'][0].detach()
-                        tmp_novel *= 255
-                        tmp_novel = tmp_novel.permute(1, 2, 0).cpu().numpy()
-                        tmp_img_name = '%s/%s_%s_view%s.png' % (
-                            self.cfg.record.show_path, self.total_steps, tag, view_id,
-                        )
-                        cv2.imwrite(tmp_img_name, tmp_novel[:, :, ::-1].astype(np.uint8))
-                        self.logger.log_image(
-                            'eval/%s/view%s/image' % (tag, view_id),
-                            tmp_novel.astype(np.uint8), self.total_steps,
-                        )
-
-        full_psnr = np.round(np.mean(np.array(psnr_list)), 4)
-        crop_psnr = np.round(np.mean(np.array(crop_psnr_list)), 4)
-        return full_psnr, crop_psnr
+        out = eval_psnr_pass(
+            model=self.model,
+            val_set=self.val_set,
+            fetch_data=self.fetch_data,
+            len_val=self.len_val,
+            novel_view_ids=self.cfg.dataset.val_novel_id,
+            bg_color=self.cfg.dataset.bg_color,
+            hcrop=self.eval_img_hcrop,
+            # Match the training-time render (same nearest-k source views) but
+            # deterministic (rng=None) so PSNR is stable.
+            pick_views=lambda d, nv: self._pick_render_views(d, nv, rng=None),
+            on_sample=_dump,
+        )
+        return out['full_psnr'], out['crop_psnr']
 
     def run_eval(self):
         logging.info(f"Doing validation ...")

@@ -13,11 +13,13 @@ from tqdm import tqdm
 from datetime import datetime
 
 from lib.human_loader import StereoHumanDataset
-from lib.runtime import freeze_raft_bn, novel_view_to_cuda, pick_render_views
+from lib.runtime import (
+    benchmark_forward,
+    eval_psnr_pass,
+    freeze_raft_bn,
+    pick_render_views,
+)
 from lib.train_recoder import Logger, file_backup
-from lib.GaussianRender import pts2render
-from lib.gs_utils.loss_utils import l1_loss, ssim
-from lib.gs_utils.image_utils import psnr
 
 from copy import deepcopy
 import torch
@@ -64,49 +66,125 @@ class Trainer:
         self.view_keys = list(getattr(self.val_set, 'view_keys', ['lmain', 'rmain']))
         self.render_nearest_k = int(getattr(self.cfg.dataset, 'render_nearest_k', 0))
         self.view_coincide_tol = float(getattr(self.cfg.dataset, 'view_coincide_tol', 1e-4))
+        self.novel_view_ids = list(self.cfg.dataset.val_novel_id)
+        # Forward-speed benchmark run after the validation pass. Set
+        # speed_iters to 0 to skip it.
+        self.speed_warmup = int(getattr(self.cfg, 'speed_warmup', 50))
+        self.speed_iters = int(getattr(self.cfg, 'speed_iters', 100))
         self.scaler = GradScaler(enabled=self.cfg.raft.mixed_precision)
 
 
     def val(self):
-        logging.info(f"Doing validation ...")
+        """Render every val sample and report PSNR + forward speed.
+
+        Scoring goes through ``lib/runtime.eval_psnr_pass``, the same function
+        train.py's periodic validation uses, so the PSNR printed here matches
+        the numbers in README.md exactly.
+        """
+        logging.info("Doing validation ...")
         torch.cuda.empty_cache()
-        psnr_list = []
-        for idx in tqdm(range(self.len_val)):
-            data = self.fetch_data(phase='val')
+        self.val_iterator = iter(self.val_loader)
 
-            view_id = data['novel_view']['view_id'][0,0].item()
-            s_name = data['novel_view']['sample_name']
+        save_hcrop = float(getattr(self.cfg.dataset, 'test_save_hcrop', 0.0))
+        bar = tqdm(total=self.len_val)
 
-            with torch.no_grad():
-                data, _, _ = self.model(data, is_train=False)
-                # fetch_data only moves the source views to GPU.
-                data['novel_view'] = novel_view_to_cuda(data['novel_view'])
-                data = pts2render(
-                    data,
-                    bg_color=self.cfg.dataset.bg_color,
-                    source_views=pick_render_views(
-                        data, data['novel_view'], view_keys=self.view_keys,
-                        k=self.render_nearest_k,
-                        coincide_tol=self.view_coincide_tol, rng=None,
-                    ),
-                )
+        def _save(idx, sample_name, view_id, render_data):
+            tmp_novel = render_data['novel_view']['img_pred'][0].detach()
+            tmp_novel *= 255
+            tmp_novel = tmp_novel.permute(1, 2, 0).cpu().numpy()
+            # Optionally drop the top/bottom `test_save_hcrop` fraction of rows
+            # before saving (0.0 = no crop). Scoring is unaffected -- that uses
+            # dataset.eval_img_hcrop.
+            if save_hcrop > 0.0:
+                h = tmp_novel.shape[0]
+                top = int(round(h * save_hcrop))
+                if top > 0:
+                    tmp_novel = tmp_novel[top:h - top, :, :]
+            cv2.imwrite(
+                '%s/%s_%02d.png' % (self.cfg.record.show_path, sample_name, view_id),
+                tmp_novel[:, :, ::-1].astype(np.uint8),
+            )
+            bar.update(1 / max(len(self.novel_view_ids), 1))
 
-                tmp_novel = data['novel_view']['img_pred'][0].detach()
-                tmp_novel *= 255
-                tmp_novel = tmp_novel.permute(1, 2, 0).cpu().numpy()
+        out = eval_psnr_pass(
+            model=self.model,
+            val_set=self.val_set,
+            fetch_data=self.fetch_data,
+            len_val=self.len_val,
+            novel_view_ids=self.novel_view_ids,
+            bg_color=self.cfg.dataset.bg_color,
+            hcrop=float(getattr(self.cfg.dataset, 'eval_img_hcrop', 0.0)),
+            pick_views=lambda d, nv: pick_render_views(
+                d, nv, view_keys=self.view_keys, k=self.render_nearest_k,
+                coincide_tol=self.view_coincide_tol, rng=None,
+            ),
+            on_sample=_save,
+        )
+        bar.close()
 
-                # Optionally drop the top/bottom `test_save_hcrop` fraction of
-                # rows before saving (0.0 = no crop).
-                hcrop = float(getattr(self.cfg.dataset, 'test_save_hcrop', 0.0))
-                if hcrop > 0.0:
-                    h = tmp_novel.shape[0]
-                    top = int(round(h * hcrop))
-                    if top > 0:
-                        tmp_novel = tmp_novel[top:h - top, :, :]
+        # Speed is measured separately, on one batch with nothing else running --
+        # the per-sample time inside the loop above moves with dataloader and
+        # GPU load. See lib/runtime.benchmark_forward.
+        speed = None
+        if self.speed_iters > 0:
+            speed = benchmark_forward(
+                model=self.model, batches=self._speed_batches(),
+                warmup=self.speed_warmup, iters=self.speed_iters,
+            )
 
-                tmp_img_name = '%s/%s_%02d.png' % (self.cfg.record.show_path, s_name[0], view_id)
-                cv2.imwrite(tmp_img_name, tmp_novel[:, :, ::-1].astype(np.uint8))
- 
+        hcrop = float(getattr(self.cfg.dataset, 'eval_img_hcrop', 0.0))
+        print()
+        print('=' * 62)
+        print(f"  config        {self.cfg.name}")
+        print(f"  checkpoint    {self.cfg.restore_ckpt}")
+        print(f"  samples       {self.len_val} x {len(self.novel_view_ids)} novel view "
+              f"= {out['n_scored']} scored")
+        print(f"  PSNR (full)   {out['full_psnr']}")
+        print(f"  PSNR (crop)   {out['crop_psnr']}   (eval_img_hcrop={hcrop})")
+        if speed is not None:
+            print(f"  forward       {speed['mean_ms']} ms   "
+                  f"(median {speed['median_ms']}, min {speed['min_ms']}, "
+                  f"std {speed['std_ms']})")
+            print(f"  peak memory   {speed['peak_mem_MB']} MB")
+            print(f"                {speed['forwards']} forward(s) covering all 4 "
+                  f"source cameras of one frame,")
+            print(f"                {speed['iters']} iterations after "
+                  f"{speed['warmup']} warm-up, inputs already on the GPU;")
+            print(f"                model forward only -- data IO and render excluded.")
+            print(f"                Needs an otherwise idle GPU to be comparable.")
+        print(f"  renders       {self.cfg.record.show_path}")
+        print('=' * 62)
+        return out
+
+    def _speed_batches(self):
+        """Batches whose forwards together cover all 4 source cameras of a frame.
+
+        4-view branches need one (all four cameras go in together); 2-view
+        branches need the three camera pairs s1/s2/s3 of the same frame, since
+        the model takes one pair at a time. Staged on the GPU before timing so
+        data IO stays out of the measurement.
+        """
+        from torch.utils.data.dataloader import default_collate
+
+        base = self.val_set.sample_list[0]
+        if len(self.view_keys) > 2:
+            names = [base]
+        else:
+            # '<seq>_s<N>_<frame>' -> the s1/s2/s3 siblings of the same frame.
+            seq, _, frame = base.split('_')
+            names = [f'{seq}_s{g}_{frame}' for g in (1, 2, 3)]
+            names = [n for n in names if n in self.val_set.sample_list]
+
+        batches = []
+        for n in names:
+            b = default_collate([self.val_set[self.val_set.sample_list.index(n)]])
+            for v in self.view_keys:
+                for k in b[v]:
+                    b[v][k] = b[v][k].cuda()
+            batches.append(b)
+        torch.cuda.synchronize()
+        logging.info("Speed benchmark input: %s", names)
+        return batches
 
     def fetch_data(self, phase):
         if phase == 'train':
@@ -174,6 +252,12 @@ if __name__ == '__main__':
     parser.add_argument('--show_path', type=str, default=None,
                         help='Directory for rendered pngs; defaults to '
                              'experiments/<exp_name>/test_show_<phase>')
+    parser.add_argument('--opts', nargs='*', default=[],
+                        help='Override config entries as space-separated '
+                             'key value pairs, e.g. '
+                             '--opts dataset.val_data_root /data/preprocessed/val. '
+                             'Only keys declared in that branch\'s '
+                             'stereo_human_config.py are accepted.')
     args = parser.parse_args()
 
     # Resolve the config directory the same way train.py does: import its
@@ -187,6 +271,10 @@ if __name__ == '__main__':
 
     cfg = ConfigStereoHuman()
     cfg.load(str(config_dir / 'stage.yaml'))
+    if args.opts:
+        cfg.cfg.defrost()
+        cfg.cfg.merge_from_list(args.opts)
+        cfg.cfg.freeze()
     cfg = cfg.get_cfg()
 
     cfg.defrost()

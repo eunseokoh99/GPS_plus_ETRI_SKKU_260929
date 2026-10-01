@@ -5,7 +5,6 @@
 ```
 train.py                  Trainer 전체 + 모델/데이터셋 dispatch + __main__
 test.py                   체크포인트로 val set을 렌더해 PNG로 저장
-eval_psnr_wandb.py        ckpt 디렉토리를 스윕하며 iteration별 PSNR을 W&B에 기록
 
 config/<branch>/
   stereo_human_config.py  그 브랜치의 yacs 기본값 (브랜치마다 다름)
