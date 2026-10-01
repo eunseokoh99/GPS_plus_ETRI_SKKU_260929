@@ -127,6 +127,8 @@ config 쪽은 브랜치마다 `dataset.local_data_root` / `train_data_root` / `v
 ./scripts/train_dav3_4view_with_multiview_supervision.sh
 ```
 
+### 결과물
+
 결과는 `experiments/<name>_<MMDD>/` 아래에 저장됩니다.
 
 ```
@@ -190,10 +192,14 @@ experiments/dav3_4view_0929/
 
 ## 추론 / 렌더링
 
+학습된 모델로 추론 및 렌더링 하기 위해, 학습된 checkpoint의 경로를 CKPT 인자로 주어 아래와 같이 실행시킵니다.
+
 ```bash
 CKPT=experiments/<name>_<MMDD>/ckpt/iter<N>_ema1_e3.pth \
   ./scripts/test_dav3_4view.sh
 ```
+
+### 결과물
 
 val set 전체를 렌더해 `experiments/<name>_<MMDD>/test_show_val/` 에 PNG로 저장하고, 끝나면
 아래와 같이 PSNR과 forward 속도를 출력합니다.
